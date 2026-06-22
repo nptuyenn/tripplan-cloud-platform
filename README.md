@@ -76,6 +76,31 @@ terraform apply
 
 Do not commit `terraform.tfvars` or any local AWS credentials.
 
+## Dev Networking Notes
+
+The Terraform code in `infra/envs/dev/` builds the Phase 1 networking foundation with:
+
+- one VPC across two availability zones
+- public, private, and data subnet tiers
+- an internet gateway for public subnets
+- a single NAT Gateway by default for private subnet egress
+- data subnet route tables without a default internet route
+- VPC Flow Logs to CloudWatch
+- VPC endpoints for S3, ECR, SSM, EC2 messages, SSM messages, and CloudWatch Logs
+
+The single NAT Gateway is a deliberate dev cost tradeoff. Production should revisit NAT Gateway placement per AZ.
+
+Example flow when you are ready to create dev networking:
+
+```bash
+cd infra/envs/dev
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars if needed.
+terraform init
+terraform plan
+terraform apply
+```
+
 ## Current Status
 
-The repository foundation and Phase 0 bootstrap skeleton are initialized. The next practical step is to review `infra/bootstrap/terraform.tfvars.example`, decide your AWS/GitHub values, and apply the bootstrap stack manually when ready.
+The repository foundation, Phase 0 bootstrap, and Phase 1 dev networking skeleton are initialized. Apply AWS stacks manually only when you are ready for the related AWS costs.

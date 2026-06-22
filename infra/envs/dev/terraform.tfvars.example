@@ -1,0 +1,12 @@
+aws_region               = "ap-southeast-1"
+project_name             = "tripplan"
+environment              = "dev"
+owner                    = "your-name"
+vpc_cidr                 = "10.0.0.0/16"
+azs                      = ["ap-southeast-1a", "ap-southeast-1b"]
+public_subnet_cidrs      = ["10.0.1.0/24", "10.0.2.0/24"]
+private_subnet_cidrs     = ["10.0.10.0/24", "10.0.11.0/24"]
+data_subnet_cidrs        = ["10.0.20.0/24", "10.0.21.0/24"]
+enable_nat_gateway       = true
+single_nat_gateway       = true
+flow_logs_retention_days = 14
