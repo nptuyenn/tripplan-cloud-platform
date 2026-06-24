@@ -9,7 +9,7 @@ output "public_subnet_ids" {
 }
 
 output "private_subnet_ids" {
-  description = "Private subnet IDs for Kubernetes nodes."
+  description = "Private subnet IDs for EKS worker nodes."
   value       = module.vpc.private_subnet_ids
 }
 

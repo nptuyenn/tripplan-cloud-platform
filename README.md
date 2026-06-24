@@ -48,16 +48,15 @@ The project includes `.nvmrc` so local development, CI, and Docker images can st
 1. Bootstrap the repo, Terraform remote state, DynamoDB lock table, GitHub OIDC, and first ADR.
 2. Build the AWS networking foundation: VPC, subnets, NAT, route tables, endpoints, SSM, and Flow Logs.
 3. Build the TripPlan frontend/backend, local Docker Compose stack, API image, ECR repository, probes, metrics, and migrations.
-4. Deploy the backend to k3s on private EC2 nodes with External Secrets Operator and Kubernetes networking controls.
+4. Deploy the backend to EKS with External Secrets Operator, AWS Load Balancer Controller, IRSA, and Kubernetes networking controls.
 5. Add GitHub Actions CI for backend, frontend, images, security scanning, and Terraform validation.
 6. Add Argo CD GitOps, sync hooks, image tag rollout, migration jobs, self-heal, and rollback.
 7. Add observability with Prometheus, Grafana, Loki, Tempo/OpenTelemetry, SLOs, and alerts.
-8. Migrate the Kubernetes deployment path to EKS and compare k3s vs EKS.
-9. Polish documentation, cost notes, demos, and portfolio materials.
+8. Polish documentation, cost notes, demos, and portfolio materials.
 
-## Cost Guardrails
+## Cost Awareness
 
-This project intentionally uses AWS services that can create ongoing cost, especially NAT Gateway, RDS, ALB, CloudWatch Logs, and EKS. Keep environments short-lived while developing, use the dev environment by default, and run `terraform destroy` after demos.
+This project intentionally uses AWS managed services such as EKS, NAT Gateway, RDS, ALB, CloudWatch Logs, and VPC endpoints. Cost is tracked for documentation, but architecture consistency is prioritized over minimizing the bill.
 
 ## Bootstrap Notes
 
@@ -83,12 +82,12 @@ The Terraform code in `infra/envs/dev/` builds the Phase 1 networking foundation
 - one VPC across two availability zones
 - public, private, and data subnet tiers
 - an internet gateway for public subnets
-- a single NAT Gateway by default for private subnet egress
+- NAT Gateway per AZ by default for private subnet egress
 - data subnet route tables without a default internet route
 - VPC Flow Logs to CloudWatch
 - VPC endpoints for S3, ECR, SSM, EC2 messages, SSM messages, and CloudWatch Logs
 
-The single NAT Gateway is a deliberate dev cost tradeoff. Production should revisit NAT Gateway placement per AZ.
+The dev environment uses the same high-level networking shape expected later: private EKS nodes, managed AWS integration, and NAT placement per AZ by default.
 
 Example flow when you are ready to create dev networking:
 

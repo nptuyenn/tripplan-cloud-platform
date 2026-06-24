@@ -24,5 +24,5 @@ TripPlan Cloud Platform is a portfolio project intended to demonstrate practical
 - Secret handling is auditable and avoids committing credentials to Git.
 - CI access to AWS can be scoped and rotated by trust policy instead of static keys.
 - GitOps rollbacks are easier because image versions are immutable.
-- The same Kubernetes base can be reused across k3s and EKS with environment-specific overlays.
+- The same Kubernetes base can be reused across dev and prod EKS overlays.
 - Operational access is more secure, but SSM endpoints and IAM permissions must be included in the infrastructure.

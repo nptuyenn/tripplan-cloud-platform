@@ -40,7 +40,7 @@ variable "public_subnet_cidrs" {
 }
 
 variable "private_subnet_cidrs" {
-  description = "CIDR blocks for private Kubernetes subnets."
+  description = "CIDR blocks for private EKS node subnets."
   type        = list(string)
   default     = ["10.0.10.0/24", "10.0.11.0/24"]
 }
@@ -58,9 +58,9 @@ variable "enable_nat_gateway" {
 }
 
 variable "single_nat_gateway" {
-  description = "Use one NAT Gateway in dev to reduce cost."
+  description = "Use one NAT Gateway for all private subnets. Dev defaults to one NAT Gateway per AZ for consistency."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "flow_logs_retention_days" {

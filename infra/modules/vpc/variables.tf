@@ -24,7 +24,7 @@ variable "public_subnet_cidrs" {
 }
 
 variable "private_subnet_cidrs" {
-  description = "CIDR blocks for private Kubernetes subnets. Must align with azs by index."
+  description = "CIDR blocks for private EKS node subnets. Must align with azs by index."
   type        = list(string)
 }
 
@@ -40,9 +40,9 @@ variable "enable_nat_gateway" {
 }
 
 variable "single_nat_gateway" {
-  description = "Use one NAT Gateway for all private subnets to reduce dev cost."
+  description = "Use one NAT Gateway for all private subnets. Set false for one NAT Gateway per AZ."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "flow_logs_retention_days" {

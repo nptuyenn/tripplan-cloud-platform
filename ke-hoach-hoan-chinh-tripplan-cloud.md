@@ -1,6 +1,6 @@
 # TripPlan Cloud Platform — Kế hoạch hoàn chỉnh (đã tích hợp cải thiện)
 
-> AWS Networking + Terraform + CI/CD + Docker + k3s/EKS + Argo CD + Observability
+> AWS Networking + Terraform + CI/CD + Docker + EKS + Argo CD + Observability
 > Stack app: **React (SPA) + Node.js/Express (API) + Postgres + Redis + S3**
 
 ---
@@ -39,7 +39,6 @@ tripplan-cloud-platform/
 │   ├── bootstrap/            # S3 state bucket + DynamoDB lock + OIDC provider (Phase 0)
 │   ├── modules/
 │   │   ├── vpc/
-│   │   ├── k3s-ec2/
 │   │   ├── eks/
 │   │   ├── rds/
 │   │   ├── ecr/
@@ -82,8 +81,8 @@ Route 53 (DNS) + ACM (TLS)
 │  ┌─── Public Subnet (10.0.1.0/24, 10.0.2.0/24, Multi-AZ) ──┐ │
 │  │  ALB  │  NAT Gateway                                     │ │
 │  └────────────┬──────────────────────────────────────────┘ │
-│  ┌─── Private Subnet — K8s Worker Nodes (10.0.10.0/23) ───┐ │
-│  │  k3s: Flannel overlay   |   EKS: VPC CNI (VPC-native)   │ │
+│  ┌─── Private Subnet — EKS Worker Nodes (10.0.10.0/23) ───┐ │
+│  │  EKS: VPC CNI (VPC-native pod networking)               │ │
 │  │  NetworkPolicy enforced │   IRSA (pod-level AWS access)  │ │
 │  └────────────┬──────────────────────────────────────────┘ │
 │  ┌─── Data Subnet (10.0.20.0/24) — No public access ───────┐│
@@ -103,14 +102,14 @@ Observability: VPC Flow Logs · CloudWatch · Prometheus · Grafana · Loki · T
 
 | Layer | Công cụ |
 |---|---|
-| IaC | Terraform — VPC, EC2/EKS, RDS, ElastiCache, S3, ALB, CloudFront, Route 53, VPC Endpoints |
+| IaC | Terraform — VPC, EKS, RDS, ElastiCache, S3, ALB, CloudFront, Route 53, VPC Endpoints |
 | State | S3 backend + DynamoDB lock |
 | Networking | Public/Private/Data subnet, NAT GW, SG, NACL, VPC Endpoint, VPC Flow Logs |
 | Frontend | React SPA → S3 + CloudFront |
 | API tier | Node.js/Express, Postgres (RDS), Redis (ElastiCache), S3 (ảnh cover) |
 | Secrets | AWS Secrets Manager + External Secrets Operator |
 | Container | Docker (multi-stage), ECR (scan-on-push) |
-| K8s | k3s (dev) → EKS (demo), NetworkPolicy, Ingress, ALB Controller, IRSA |
+| K8s | EKS, managed node groups, VPC CNI, NetworkPolicy, Ingress, AWS Load Balancer Controller, IRSA |
 | CI | GitHub Actions (OIDC, test, Trivy scan, tfsec/checkov) |
 | CD | Argo CD (GitOps, auto-sync, sync-wave, self-heal) |
 | Observability | Prometheus, Grafana, Loki, Tempo/OTel, CloudWatch |
@@ -140,7 +139,7 @@ Observability: VPC Flow Logs · CloudWatch · Prometheus · Grafana · Loki · T
 **Mục tiêu:** Hạ tầng mạng 3-tier với isolation đầy đủ.
 
 - Module `vpc/`: public / private / data subnet trên **2 AZ**.
-- Internet Gateway, **NAT Gateway** (dev dùng 1 NAT để tiết kiệm; ghi chú trade-off HA), route tables.
+- Internet Gateway, **NAT Gateway theo AZ** cho private subnet egress, route tables.
 - Security Group (stateful) + NACL (stateless) theo từng tier.
 - Module `vpc-endpoints/`: **ecr.api + ecr.dkr (interface)** + **S3 (gateway)** — bắt buộc đủ 3 để pull/push ECR private. (Thêm CloudWatch Logs endpoint nếu muốn flow log đi private.)
 - Bật **VPC Flow Logs** → CloudWatch (dùng debug network ở phase sau).
@@ -175,15 +174,16 @@ Observability: VPC Flow Logs · CloudWatch · Prometheus · Grafana · Loki · T
 
 ---
 
-### Phase 3 — k3s Cluster + Kubernetes Networking
-**Mục tiêu:** App chạy trên k8s thật, mạng đúng thiết kế.
+### Phase 3 — EKS Cluster + Kubernetes Networking
+**Mục tiêu:** App chạy trên EKS, mạng đúng thiết kế và đồng nhất với AWS managed services.
 
-- Terraform provision **2 EC2** (private subnet), cài **k3s** (1 server + 1 agent).
-- IAM role cho node để **pull ECR**.
+- Terraform provision **EKS cluster** + managed node group trong private subnet.
+- IAM role cho node để **pull ECR** và vận hành node group.
+- Cài **AWS Load Balancer Controller** bằng Helm, dùng **IRSA** để cấp quyền AWS cho controller.
 - Cài **External Secrets Operator**, tạo `ExternalSecret` map từ Secrets Manager → k8s Secret.
 - Deploy API: Deployment + Service + **Ingress**.
-  - ⚠️ **Ingress trên k3s khác EKS:** k3s mặc định là **Traefik + Flannel overlay**, pod không có VPC IP. Cách làm thực tế: dùng Ingress (Traefik/Nginx) qua **NodePort** rồi cho **ALB/NLB target-type `instance`** trỏ tới node (không dùng `target-type: ip` như EKS).
-- **NetworkPolicy:** k3s có sẵn network policy controller (kube-router) nên policy **có hiệu lực** — viết policy chặn data tier chỉ cho phép từ API pod, test deny mặc định.
+  - Với EKS + VPC CNI, dùng AWS Load Balancer Controller và ALB target-type `ip` để route trực tiếp tới pod IP trong VPC.
+- **NetworkPolicy:** dùng EKS-compatible network policy path (Amazon VPC CNI network policy hoặc Cilium/Calico nếu chọn sau), viết policy chặn data tier chỉ cho phép từ API pod, test deny mặc định.
 - Pod hygiene: `resources.requests/limits`, `securityContext` (non-root, readOnlyRootFS), `livenessProbe`/`readinessProbe`.
 - Frontend: deploy React tĩnh lên **S3 + CloudFront** (Terraform).
 
@@ -231,18 +231,7 @@ Observability: VPC Flow Logs · CloudWatch · Prometheus · Grafana · Loki · T
 
 ---
 
-### Phase 7 — EKS Migration
-**Mục tiêu:** Chạy lại trên managed k8s và so sánh thẳng.
-
-- Module Terraform **EKS**; deploy lại app dùng cùng `k8s/base` + overlay riêng.
-- **AWS Load Balancer Controller + IRSA**; lúc này dùng được **target-type `ip`** vì **VPC CNI cho pod IP trong VPC** (khác hẳn k3s/Flannel — đây là điểm so sánh hay).
-- So sánh **k3s vs EKS**: chi phí (EKS control plane ~$72/tháng), độ phức tạp setup, vận hành, mạng (overlay vs VPC-native), ingress.
-
-**Deliverable:** App chạy trên EKS; bảng/đoạn so sánh k3s vs EKS trong README.
-
----
-
-### Phase 8 — Documentation & Polish
+### Phase 7 — Documentation & Polish
 **Mục tiêu:** Đóng gói để gắn vào CV/LinkedIn.
 
 - README hoàn chỉnh: architecture diagram, **cost breakdown**, lessons learned, link tới ADR.
@@ -268,9 +257,9 @@ Observability: VPC Flow Logs · CloudWatch · Prometheus · Grafana · Loki · T
 
 | Bắt buộc làm | Có thể làm sau | Nâng cao (nếu còn thời gian) |
 |---|---|---|
-| Phase 0,1,2,3 (state, VPC, app, k3s) | Phase 4,5 (CI/CD) | Tempo/OTel tracing |
+| Phase 0,1,2,3 (state, VPC, app, EKS) | Phase 4,5 (CI/CD) | Tempo/OTel tracing |
 | Secrets Manager + ESO | Phase 6 observability | WAF, CloudFront cho API |
-| OIDC | Phase 7 EKS | cosign/SBOM, ApplicationSet đa env |
+| OIDC | Phase 7 polish | cosign/SBOM, ApplicationSet đa env |
 | `/healthz` + `/readyz` + `/metrics` | SLO/alert | Multi-AZ RDS |
 
 > Cốt lõi: làm **đúng và sâu** state/secrets/GitOps/networking quan trọng hơn nhồi thêm công cụ.
