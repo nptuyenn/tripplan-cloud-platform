@@ -1,7 +1,26 @@
 # TripPlan Cloud Platform — Kế hoạch hoàn chỉnh (đã tích hợp cải thiện)
 
 > AWS Networking + Terraform + CI/CD + Docker + EKS + Argo CD + Observability
-> Stack app: **React (SPA) + Node.js/Express (API) + Postgres + Redis + S3**
+> Stack app (tối giản — app chỉ là "phương tiện" để demo hạ tầng): **React tối giản (SPA) + Node.js/Express (API) + Postgres + S3**
+
+---
+
+## Tiến độ hiện tại
+
+| Phase | Trạng thái | Ghi chú |
+|---|---|---|
+| Phase 0 — Bootstrap | ✅ Xong phần code | Đã có `infra/bootstrap` (main/outputs/variables/versions.tf + tfvars example). **Cần chốt state bootstrap và xác nhận OIDC khi apply thật.** |
+| Phase 1 — Networking | 🔨 Đang làm | Đã có module `vpc/`, `vpc-endpoints/`, `infra/envs/dev`, route table, NAT theo AZ, SG nền, NACL, Flow Logs, S3/ECR/SSM/Logs endpoints. Còn: vẽ sơ đồ, `terraform plan/apply`, verify route/data subnet. |
+| Phase 2–7 | ⬜ Chưa | |
+
+### Việc cần chốt nốt cho Phase 0 (quan trọng — phát hiện từ cấu trúc bạn gửi)
+
+1. **State của bootstrap đang là local** (`terraform.tfstate` + `.backup` nằm trong `infra/bootstrap/`). Đây là tình huống "con gà–quả trứng" bình thường vì bootstrap *tạo ra* chính cái S3 bucket. Hai cách xử lý đúng:
+   - **(Khuyến nghị)** Sau khi bucket được tạo, chạy `terraform init -migrate-state` để **đẩy luôn state của bootstrap vào S3 bucket** đó → không còn state local.
+   - Hoặc giữ local nhưng **bắt buộc `.gitignore`** cả `terraform.tfstate*`.
+2. **`.gitignore` phải có:** `*.tfstate`, `*.tfstate.*`, `.terraform/`, và `*.tfvars` (chỉ commit `terraform.tfvars.example`). Tuyệt đối không commit state/tfvars lên Git.
+3. **Giữ lại** `.terraform.lock.hcl` trong Git (đây là file *nên* commit để khoá version provider).
+4. Các `.gitkeep` thừa trong thư mục đã có file thật đã được xoá; chỉ giữ placeholder cho module/env chưa triển khai.
 
 ---
 
@@ -42,7 +61,6 @@ tripplan-cloud-platform/
 │   │   ├── eks/
 │   │   ├── rds/
 │   │   ├── ecr/
-│   │   ├── elasticache/
 │   │   └── vpc-endpoints/
 │   └── envs/
 │       ├── dev/
@@ -86,7 +104,7 @@ Route 53 (DNS) + ACM (TLS)
 │  │  NetworkPolicy enforced │   IRSA (pod-level AWS access)  │ │
 │  └────────────┬──────────────────────────────────────────┘ │
 │  ┌─── Data Subnet (10.0.20.0/24) — No public access ───────┐│
-│  │  RDS Postgres  │  ElastiCache Redis                      ││
+│  │  RDS Postgres                                             ││
 │  └────────────────────────────────────────────────────────┘│
 │  VPC Endpoints: ecr.api + ecr.dkr (interface) + S3 (gateway)│
 │  Security: Security Group (stateful) · NACL (stateless)     │
@@ -102,11 +120,11 @@ Observability: VPC Flow Logs · CloudWatch · Prometheus · Grafana · Loki · T
 
 | Layer | Công cụ |
 |---|---|
-| IaC | Terraform — VPC, EKS, RDS, ElastiCache, S3, ALB, CloudFront, Route 53, VPC Endpoints |
+| IaC | Terraform — VPC, EKS, RDS, S3, ALB, CloudFront, Route 53, VPC Endpoints |
 | State | S3 backend + DynamoDB lock |
 | Networking | Public/Private/Data subnet, NAT GW, SG, NACL, VPC Endpoint, VPC Flow Logs |
-| Frontend | React SPA → S3 + CloudFront |
-| API tier | Node.js/Express, Postgres (RDS), Redis (ElastiCache), S3 (ảnh cover) |
+| Frontend | React tối giản → S3 + CloudFront |
+| API tier | Node.js/Express, Postgres (RDS), S3 (ảnh cover) |
 | Secrets | AWS Secrets Manager + External Secrets Operator |
 | Container | Docker (multi-stage), ECR (scan-on-push) |
 | K8s | EKS, managed node groups, VPC CNI, NetworkPolicy, Ingress, AWS Load Balancer Controller, IRSA |
@@ -123,7 +141,7 @@ Observability: VPC Flow Logs · CloudWatch · Prometheus · Grafana · Loki · T
 
 ---
 
-### Phase 0 — Bootstrap & nền tảng repo
+### Phase 0 — Bootstrap & nền tảng repo  ✅ ĐÃ XONG
 **Mục tiêu:** Dựng phần "móng" để mọi thứ về sau an toàn và tái lập được.
 
 - `infra/bootstrap/`: tạo **S3 bucket** (bật versioning + SSE) chứa Terraform state + **DynamoDB table** cho state lock.
@@ -133,44 +151,55 @@ Observability: VPC Flow Logs · CloudWatch · Prometheus · Grafana · Loki · T
 
 **Deliverable:** State backend hoạt động (`terraform init` dùng S3 backend OK); OIDC role assume được từ Actions; ADR đầu tiên.
 
+> **Còn lại để đóng Phase 0 hoàn toàn:** (1) migrate state bootstrap vào S3 hoặc gitignore state local; (2) thêm `.gitignore` đúng (state/tfvars/.terraform); (3) xác nhận một workflow GitHub Actions assume được OIDC role. Xem "Việc cần chốt nốt" ở đầu file.
+
 ---
 
-### Phase 1 — Terraform: AWS Networking Foundation
+### Phase 1 — Terraform: AWS Networking Foundation  🔨 ĐANG LÀM
 **Mục tiêu:** Hạ tầng mạng 3-tier với isolation đầy đủ.
+**Đã có:** module `vpc/`, `vpc-endpoints/`, và `infra/envs/dev` (main/outputs/variables/backend/tfvars example).
 
 - Module `vpc/`: public / private / data subnet trên **2 AZ**.
 - Internet Gateway, **NAT Gateway theo AZ** cho private subnet egress, route tables.
-- Security Group (stateful) + NACL (stateless) theo từng tier.
-- Module `vpc-endpoints/`: **ecr.api + ecr.dkr (interface)** + **S3 (gateway)** — bắt buộc đủ 3 để pull/push ECR private. (Thêm CloudWatch Logs endpoint nếu muốn flow log đi private.)
+- Security Group (stateful) nền cho ALB, EKS nodes, RDS; NACL (stateless) theo từng tier.
+- Module `vpc-endpoints/`: **ecr.api + ecr.dkr (interface)** + **S3 (gateway)** — bắt buộc đủ 3 để pull/push ECR private.
+- Đã thêm CloudWatch Logs endpoint để log traffic đi private.
 - Bật **VPC Flow Logs** → CloudWatch (dùng debug network ở phase sau).
 - Bật **SSM** (VPC endpoints `ssm`, `ssmmessages`, `ec2messages`) để Session Manager chạy không cần internet.
 
-**Deliverable:** `terraform apply` thành công; sơ đồ network trong README; chứng minh data subnet không có route ra internet.
+**Còn lại để đóng Phase 1:** vẽ sơ đồ network; chạy `terraform plan/apply`; chứng minh data subnet không có route ra internet; xác nhận private subnet đi ECR/S3/SSM qua endpoints.
 
 ---
 
-### Phase 2 — Ứng dụng TripPlan + Docker + ECR
-**Mục tiêu:** App chạy được, đóng gói image, sẵn sàng cho k8s.
+### Phase 2 — Ứng dụng TripPlan (tối giản) + Docker + ECR
+**Mục tiêu:** Có một artifact đủ để deploy và demo hạ tầng — KHÔNG làm sản phẩm hoàn chỉnh.
 
-**App:** Web tạo/quản lý lịch trình du lịch theo ngày, tìm địa điểm, chia sẻ public link.
+**Nguyên tắc:** giữ đúng các endpoint *chạm* vào từng thành phần hạ tầng, cắt mọi thứ còn lại.
 
-**Các trang (React SPA):** Trang chủ (chuyến đi của tôi + khám phá public) · Đăng nhập/Đăng ký · Tạo chuyến đi · Chi tiết chuyến đi (timeline theo ngày) · Thêm hoạt động (tìm địa điểm qua API bản đồ) · Bản đồ tổng quan · Chia sẻ public (read-only) · Profile.
+**API (Express) — chỉ ~6 endpoint:**
+| Endpoint | Mục đích / hạ tầng nó demo |
+|---|---|
+| `GET /healthz` | liveness probe |
+| `GET /readyz` | readiness probe — chỉ check kết nối **Postgres** |
+| `GET /metrics` | `prom-client` — để Prometheus scrape |
+| `GET /trips` + `POST /trips` | CRUD đơn giản vào **RDS Postgres** → demo data subnet isolation |
+| `GET /places?q=...` | gọi 1 API public ngoài (Nominatim) → traffic đi qua **NAT Gateway** (giải thích vì sao cần NAT) |
+| `POST /trips/:id/cover` | sinh **presigned URL S3** → demo **IRSA** (pod lấy quyền AWS không cần access key) |
 
-**DB schema (Postgres):** `users`; `trips` (user_id, destination, start/end date, cover_image_url, is_public, share_token); `trip_days` (trip_id, date); `activities` (trip_day_id, place_name, time, notes, lat, lng).
+**DB schema:** chỉ **1 bảng** `trips` (id, destination, start_date, end_date, cover_image_url). Bỏ `users`, `trip_days`, `activities`.
+
+**Đã cắt khỏi bản gốc:** auth/đăng ký-đăng nhập, sharing public link, timeline nhiều ngày, profile, render bản đồ, **Redis/ElastiCache**.
+
+**Frontend (React tối giản):** 1–2 trang là đủ — một trang list + tạo trip, gọi API qua `fetch`. Build tĩnh, đẩy lên **S3 + CloudFront**. Mục đích chỉ để có cái demo CDN/TLS, không đầu tư UI.
 
 **Việc cần làm:**
-- **API (Express):** auth + CRUD trip/day/activity + Postgres.
-- **Migration:** chọn `node-pg-migrate`/Prisma; file đặt trong `backend/migrations/`. Sẽ chạy bằng **k8s Job/hook** ở Phase 5.
-- **Probe:** `/healthz` (liveness) **và** `/readyz` (readiness — check DB + Redis connect).
-- **Metrics:** expose `/metrics` bằng `prom-client` (chuẩn bị sẵn cho Prometheus, đừng để dồn sang Phase 6).
-- **Upload ảnh cover** → S3 qua presigned URL.
-- **API bản đồ ngoài** (Nominatim/Google Places) — traffic đi qua **NAT Gateway** (đây là lý do cần NAT, dùng để demo).
-- (Tùy chọn) cache kết quả tìm địa điểm bằng **Redis**.
-- **Secrets:** DB password do Terraform sinh `random_password` → ghi **Secrets Manager**; backend đọc qua env được ESO inject (ở Phase 3).
+- API 6 endpoint ở trên + kết nối Postgres.
+- **Migration:** `node-pg-migrate` (1 file tạo bảng `trips`); để trong `backend/migrations/`; chạy bằng **k8s Job/hook** ở Phase 5.
+- **Secrets:** DB password do Terraform sinh `random_password` → ghi **Secrets Manager**; backend đọc qua env do ESO inject (Phase 3). Không hardcode.
+- **Docker:** Dockerfile multi-stage cho API; build & push **ECR (qua VPC Endpoint)**, tag = git SHA.
 - **Frontend:** React build tĩnh, cấu hình base URL API.
-- **Docker:** Dockerfile multi-stage cho API; build & push lên **ECR (qua VPC Endpoint)** với tag = git SHA.
 
-**Deliverable:** `docker-compose up` chạy full local (API + Postgres + Redis + frontend); image API trên ECR; ECR scan-on-push không có critical CVE.
+**Deliverable:** `docker-compose up` chạy local (API + Postgres + frontend); image API trên ECR; ECR scan-on-push không có critical CVE.
 
 ---
 
@@ -245,7 +274,7 @@ Observability: VPC Flow Logs · CloudWatch · Prometheus · Grafana · Loki · T
 ## 5. Ghi chú vận hành quan trọng
 
 - **Luôn `terraform destroy`** sau demo để tránh phát sinh chi phí.
-- Cảnh báo chi phí: **EKS control plane ~$0.10/giờ (~$72/tháng)**; **NAT Gateway ~$32/tháng + phí data**; bật khi cần.
+- Cảnh báo chi phí: **EKS control plane ~$0.10/giờ (~$72/tháng)**; **NAT Gateway ~$32/tháng/cái + phí data** — bạn đang để **NAT theo AZ** (2 AZ ≈ ~$64/tháng), HA tốt hơn nhưng đắt gấp đôi; với môi trường dev có thể hạ xuống **1 NAT dùng chung** để tiết kiệm. Bật khi cần, `destroy` khi xong.
 - **OIDC > access key** cho CI — vừa an toàn vừa là điểm cộng phỏng vấn.
 - **Không commit secret/cleartext** lên Git; mọi credential qua Secrets Manager.
 - **Image dùng tag git SHA**, không `latest`, để Argo phát hiện thay đổi và rollback chính xác.

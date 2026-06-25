@@ -1,0 +1,73 @@
+name: Infra Validate
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "infra/**"
+      - ".github/workflows/infra-validate.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "infra/**"
+      - ".github/workflows/infra-validate.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: infra-validate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  terraform:
+    name: Terraform
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        working-directory:
+          - infra/bootstrap
+          - infra/envs/dev
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+
+      - name: Check Terraform formatting
+        run: terraform fmt -check -recursive infra
+
+      - name: Terraform init
+        working-directory: ${{ matrix.working-directory }}
+        run: terraform init -backend=false
+
+      - name: Terraform validate
+        working-directory: ${{ matrix.working-directory }}
+        run: terraform validate
+
+  repository-hygiene:
+    name: Repository Hygiene
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure local Terraform files are not committed
+        shell: bash
+        run: |
+          forbidden_files="$(git ls-files | grep -E '(^|/)(terraform\.tfvars|terraform\.tfstate|terraform\.tfstate\.backup)$|(^|/)\.terraform/' || true)"
+          if [ -n "$forbidden_files" ]; then
+            echo "The following local Terraform files must not be committed:"
+            echo "$forbidden_files"
+            exit 1
+          fi

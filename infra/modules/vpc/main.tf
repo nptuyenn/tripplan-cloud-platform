@@ -157,6 +157,103 @@ resource "aws_route_table_association" "data" {
   route_table_id = aws_route_table.data[each.key].id
 }
 
+resource "aws_security_group" "alb" {
+  name        = "${local.name_prefix}-alb-sg"
+  description = "Allow public HTTP and HTTPS traffic to the application load balancer."
+  vpc_id      = aws_vpc.this.id
+
+  ingress {
+    description = "HTTP from internet"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "HTTPS from internet"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    description = "All outbound"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = merge(local.common_tags, {
+    Name = "${local.name_prefix}-alb-sg"
+    Tier = "public"
+  })
+}
+
+resource "aws_security_group" "eks_nodes" {
+  name        = "${local.name_prefix}-eks-nodes-sg"
+  description = "Base security group for EKS worker nodes."
+  vpc_id      = aws_vpc.this.id
+
+  ingress {
+    description = "Node-to-node traffic"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    self        = true
+  }
+
+  ingress {
+    description     = "Traffic from ALB"
+    from_port       = 0
+    to_port         = 65535
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]
+  }
+
+  egress {
+    description = "All outbound"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = merge(local.common_tags, {
+    Name = "${local.name_prefix}-eks-nodes-sg"
+    Tier = "private"
+  })
+}
+
+resource "aws_security_group" "rds" {
+  name        = "${local.name_prefix}-rds-sg"
+  description = "Allow Postgres traffic from EKS worker nodes."
+  vpc_id      = aws_vpc.this.id
+
+  ingress {
+    description     = "Postgres from EKS nodes"
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.eks_nodes.id]
+  }
+
+  egress {
+    description = "All outbound"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = merge(local.common_tags, {
+    Name = "${local.name_prefix}-rds-sg"
+    Tier = "data"
+  })
+}
+
 resource "aws_network_acl" "public" {
   vpc_id     = aws_vpc.this.id
   subnet_ids = values(aws_subnet.public)[*].id
@@ -229,15 +326,6 @@ resource "aws_network_acl" "data" {
   ingress {
     protocol   = "tcp"
     rule_no    = 110
-    action     = "allow"
-    cidr_block = var.vpc_cidr
-    from_port  = 6379
-    to_port    = 6379
-  }
-
-  ingress {
-    protocol   = "tcp"
-    rule_no    = 120
     action     = "allow"
     cidr_block = var.vpc_cidr
     from_port  = 1024

@@ -24,7 +24,7 @@ output "private_subnet_ids" {
 }
 
 output "data_subnet_ids" {
-  description = "Data subnet IDs for RDS and Redis."
+  description = "Data subnet IDs for RDS Postgres."
   value       = values(aws_subnet.data)[*].id
 }
 
@@ -41,6 +41,21 @@ output "private_route_table_ids" {
 output "data_route_table_ids" {
   description = "Data route table IDs."
   value       = values(aws_route_table.data)[*].id
+}
+
+output "alb_security_group_id" {
+  description = "Security group ID for the public ALB."
+  value       = aws_security_group.alb.id
+}
+
+output "eks_nodes_security_group_id" {
+  description = "Base security group ID for EKS worker nodes."
+  value       = aws_security_group.eks_nodes.id
+}
+
+output "rds_security_group_id" {
+  description = "Security group ID for RDS Postgres."
+  value       = aws_security_group.rds.id
 }
 
 output "flow_log_group_name" {

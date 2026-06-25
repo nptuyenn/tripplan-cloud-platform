@@ -9,7 +9,7 @@ The dev environment needs enough AWS networking depth to demonstrate a realistic
 
 ## Decision
 
-The dev VPC uses public, private, and data subnets across two availability zones. Public subnets host internet-facing load balancing and NAT. Private subnets are reserved for EKS worker nodes. Data subnets are reserved for RDS and Redis and do not receive a default route to the internet.
+The dev VPC uses public, private, and data subnets across two availability zones. Public subnets host internet-facing load balancing and NAT. Private subnets are reserved for EKS worker nodes. Data subnets are reserved for RDS Postgres and do not receive a default route to the internet.
 
 Dev uses NAT Gateway placement per AZ by default to keep the networking model closer to a production-style AWS setup. VPC endpoints are included for S3, ECR, SSM, EC2 messages, SSM messages, and CloudWatch Logs.
 

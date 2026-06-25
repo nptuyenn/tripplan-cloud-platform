@@ -2,13 +2,13 @@
 
 TripPlan Cloud Platform is a DevOps and cloud portfolio project for running a travel planning web app on AWS with Terraform, Docker, Kubernetes, GitOps, and observability.
 
-The target application is a React SPA plus a Node.js/Express API backed by Postgres, Redis, and S3 object storage. The infrastructure is built incrementally so each phase can be applied, verified, and destroyed or rolled back.
+The target application is a small React SPA plus a Node.js/Express API backed by Postgres and S3 object storage. The infrastructure is built incrementally so each phase can be applied, verified, and destroyed or rolled back.
 
 ## Target Architecture
 
 - Frontend: React SPA hosted on S3 and served through CloudFront.
 - API: Node.js/Express container deployed to Kubernetes.
-- Data: RDS Postgres, ElastiCache Redis, and S3 for trip cover images.
+- Data: RDS Postgres and S3 for trip cover images.
 - Networking: AWS VPC with public, private, and data subnets across 2 AZs.
 - IaC: Terraform with remote state in S3 and locking through DynamoDB.
 - Secrets: AWS Secrets Manager synced into Kubernetes by External Secrets Operator.
@@ -84,6 +84,7 @@ The Terraform code in `infra/envs/dev/` builds the Phase 1 networking foundation
 - an internet gateway for public subnets
 - NAT Gateway per AZ by default for private subnet egress
 - data subnet route tables without a default internet route
+- base security groups for ALB, EKS worker nodes, and RDS Postgres
 - VPC Flow Logs to CloudWatch
 - VPC endpoints for S3, ECR, SSM, EC2 messages, SSM messages, and CloudWatch Logs
 
@@ -102,4 +103,4 @@ terraform apply
 
 ## Current Status
 
-The repository foundation, Phase 0 bootstrap, and Phase 1 dev networking skeleton are initialized. Apply AWS stacks manually only when you are ready for the related AWS costs.
+The repository foundation, Phase 0 bootstrap, and Phase 1 dev networking skeleton are initialized. Phase 1 still needs an apply/verify cycle and a network diagram before it is considered complete.
